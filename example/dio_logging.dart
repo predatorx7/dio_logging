@@ -11,10 +11,15 @@ void main() async {
   myLogger.level = Level.ALL;
 
   myLogger.onRecord.listen((event) {
-    final message = event.object?.toString() ?? event.message;
-    if (event.error != null) print(event.error.toString());
-    print(message);
-    if (event.stackTrace != null) print(event.stackTrace.toString());
+    final object = event.object;
+    if (object is InterceptedNetworkLog) {
+      print(object.toPrettyLog());
+    } else {
+      final message = event.object?.toString() ?? event.message;
+      if (event.error != null) print(event.error.toString());
+      print(message);
+      if (event.stackTrace != null) print(event.stackTrace.toString());
+    }
   });
 
   client.interceptors.add(DioLogging(logger: myLogger));

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:isolate';
 
 import 'package:dio/dio.dart';
 import 'package:dio_logging/src/logger.dart';
@@ -18,7 +17,7 @@ class DioLogging extends Interceptor {
     RequestInterceptorHandler handler,
   ) {
     super.onRequest(options, handler);
-    log(InterceptorLog(
+    log(InterceptedNetworkLog(
       requestOptions: options,
     ));
   }
@@ -29,7 +28,7 @@ class DioLogging extends Interceptor {
     ResponseInterceptorHandler handler,
   ) {
     super.onResponse(response, handler);
-    log(InterceptorLog(
+    log(InterceptedNetworkLog(
       requestOptions: response.requestOptions,
       response: response,
     ));
@@ -41,7 +40,7 @@ class DioLogging extends Interceptor {
     ErrorInterceptorHandler handler,
   ) {
     super.onError(err, handler);
-    log(InterceptorLog(
+    log(InterceptedNetworkLog(
       dioErrorType: err.type,
       error: err.error,
       requestOptions: err.requestOptions,
@@ -50,28 +49,25 @@ class DioLogging extends Interceptor {
     ));
   }
 
-  Future<void> log(InterceptorLog log) async {
-    final logAsJson = await Isolate.run(
-      () => InterceptorLog._toJsonString(log),
-    );
+  Future<void> log(InterceptedNetworkLog log) async {
     if (log.error != null) {
-      logger.severe(logAsJson, log.error, log.stackTrace);
+      logger.severe(log, log.error, log.stackTrace);
     } else if (log.response != null) {
-      logger.info(logAsJson, log.error, log.stackTrace);
+      logger.info(log, log.error, log.stackTrace);
     } else {
-      logger.fine(logAsJson, log.error, log.stackTrace);
+      logger.fine(log, log.error, log.stackTrace);
     }
   }
 }
 
-class InterceptorLog {
+class InterceptedNetworkLog {
   final DioErrorType? dioErrorType;
   final Object? error;
   final RequestOptions requestOptions;
   final Response? response;
   final StackTrace? stackTrace;
 
-  const InterceptorLog({
+  const InterceptedNetworkLog({
     this.dioErrorType,
     this.error,
     required this.requestOptions,
@@ -122,9 +118,100 @@ class InterceptorLog {
     };
   }
 
-  static String _toJsonString(InterceptorLog log) {
+  static String toJsonString(InterceptedNetworkLog log) {
     final logAsMap = log.toJson();
     final logAsJson = json.encode(logAsMap);
     return logAsJson;
+  }
+
+  String toPrettyLog() {
+    final buffer = StringBuffer();
+    buffer.writeln('===== Intercepted Network ==========');
+    if (error != null) {
+      buffer.writeln('$dioErrorType $error');
+      if (stackTrace != null) {
+        buffer.writeln(stackTrace.toString());
+        buffer.writeln();
+      }
+    }
+
+    String tryJson(Object? object) {
+      if (object == null) return '';
+      if (object is! Map && object is! List) return object.toString();
+      try {
+        return json.encode(object);
+      } catch (_) {
+        return object.toString();
+      }
+    }
+
+    final request = {
+      if (requestOptions.path.isNotEmpty) 'path': requestOptions.path,
+      'uri': requestOptions.uri.toString(),
+      if (requestOptions.baseUrl.isNotEmpty) 'baseUrl': requestOptions.baseUrl,
+      'connectTimeout': requestOptions.connectTimeout,
+      if (requestOptions.contentType != null)
+        'contentType': requestOptions.contentType,
+      if (requestOptions.extra.isNotEmpty) 'extra': requestOptions.extra,
+      'followRedirects': requestOptions.followRedirects,
+      if (requestOptions.headers.isNotEmpty) 'headers': tryJson(requestOptions.headers),
+      'listFormat': requestOptions.listFormat.toString(),
+      'maxRedirects': requestOptions.maxRedirects,
+      if (requestOptions.queryParameters.isNotEmpty)
+        'queryParameters': tryJson(requestOptions.queryParameters),
+      'receiveDataWhenStatusError': requestOptions.receiveDataWhenStatusError,
+      'receiveTimeout': requestOptions.receiveTimeout,
+      'responseType': requestOptions.responseType.toString(),
+      'sendTimeout': requestOptions.sendTimeout,
+    };
+    buffer.writeln('---- REQUEST (METHOD ${requestOptions.method}) ----');
+    for (final entry in request.entries) {
+      buffer.writeln(
+        'request.${entry.key}: ${tryJson(entry.value)}',
+      );
+    }
+    if (requestOptions.data != null) {
+      buffer.writeln('[REQUEST BODY]');
+      buffer.writeln(tryJson(requestOptions.data));
+      buffer.writeln('END [REQUEST BODY]');
+    } else {
+      buffer.writeln('[REQUEST BODY is NULL]');
+    }
+    buffer.writeln('---- X ----');
+
+    final response = this.response;
+
+    if (response != null) {
+      final responseData = {
+        if (response.extra.isNotEmpty) "extra": response.extra,
+        if (response.headers.map.isNotEmpty) "headers": tryJson(response.headers.map),
+        "isRedirect": response.isRedirect,
+        "realUri": response.realUri.toString(),
+        if (response.statusMessage != null)
+          "statusMessage": response.statusMessage,
+      };
+      buffer.writeln('---- RESPONSE (STATUS ${response.statusCode}) ----');
+      for (final entry in responseData.entries) {
+        buffer.writeln(
+          'response.${entry.key}: ${tryJson(entry.value)}',
+        );
+      }
+      if (response.data != null) {
+        buffer.writeln('[RESPONSE DATA]');
+        buffer.writeln(tryJson(response.data));
+        buffer.writeln('END [RESPONSE DATA]');
+      } else {
+        buffer.writeln('[RESPONSE DATA is NULL]');
+      }
+      buffer.writeln('---- X ----');
+    }
+    buffer.writeln('===== END Intercepted Network ==========');
+
+    return buffer.toString();
+  }
+
+  @override
+  String toString() {
+    return toJsonString(this);
   }
 }
