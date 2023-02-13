@@ -4,10 +4,10 @@ version: 1.0.0
 # repository: https://github.com/my_org/my_repo
 
 environment:
-  sdk: '>=2.19.2 <3.0.0'
+  sdk: '>=2.19.0 <3.0.0'
 
 dependencies:
-  dio: ^4.0.6
+  dio: ^4.0.0
   logging: ^1.1.1
 
 dev_dependencies:
